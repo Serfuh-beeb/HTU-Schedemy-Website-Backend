@@ -24,22 +24,18 @@
         update_cache: yes
 
     # --- 2. Setup Project Directory ---
-    - name: Create App Directory
+    - name: Remove old project directory if exists
       file:
         path: /opt/schedemy
-        state: directory
-        mode: '0777'  # Open permissions so we can copy files easily
-        owner: ubuntu
-        group: ubuntu
+        state: absent
 
     # --- 3. Clone Code from GitHub ---
-    - name: Clone or update project from GitHub
+    - name: Clone project from GitHub
       git:
         repo: https://github.com/Serfuh-beeb/HTU-Schedemy-Website-Backend.git
         dest: /opt/schedemy
         version: main
         force: yes
-      become_user: ubuntu
 
     # --- 4. Stop placeholder Nginx container (if running) ---
     - name: Stop placeholder Nginx container
