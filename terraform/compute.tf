@@ -99,4 +99,10 @@ resource "aws_autoscaling_group" "schedemy_asg" {
     value               = "Schedemy-App-Instance"
     propagate_at_launch = true
   }
+
+  tag {
+    key                 = "Role"
+    value               = "SchedemyWebServer"
+    propagate_at_launch = true
+  }
 }
