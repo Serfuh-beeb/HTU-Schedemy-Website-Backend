@@ -43,6 +43,7 @@ resource "aws_launch_template" "schedemy_lt" {
   image_id      = "ami-04b70fa74e45c3917" # Ubuntu 24.04 LTS (us-east-1)
   instance_type = "t3.micro"
 
+key_name = "serfuh"
   # Networking
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
