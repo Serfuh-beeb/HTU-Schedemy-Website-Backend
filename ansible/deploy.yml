@@ -1,64 +1,75 @@
 ---
-- name: Configure and Deploy Schedemy
+- name: Configure and Deploy Schedemy (Java Backend)
   hosts: role_SchedemyWebServer
   become: yes
   vars:
+    # This ensures we can build even if permissions are tricky
     git_safe_directory: /opt/schedemy
 
   tasks:
-    # --- 1. System Setup ---
-    - name: Install Docker, Git, and AWS CLI
+    # --- 1. Install Real Dependencies (Java & Maven) ---
+    - name: Update Cache and Install Java, Maven, Docker
       apt:
-        # Added 'awscli' and 'docker-compose-plugin' here
-        name: ['docker.io', 'git', 'curl', 'awscli', 'docker-compose-plugin']
+        name: 
+          - 'openjdk-17-jdk'    # The Java Development Kit
+          - 'maven'             # To build your pom.xml
+          - 'docker.io'
+          - 'git'
+          - 'acl'
         state: present
         update_cache: yes
 
-    - name: Start and Enable Docker
-      service:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Add Ubuntu user to Docker group
-      user:
-        name: ubuntu
-        groups: docker
-        append: yes
-
-    # --- 2. Application Setup ---
+    # --- 2. Setup Project Directory ---
     - name: Create App Directory
       file:
         path: /opt/schedemy
         state: directory
-        mode: '0755'
+        mode: '0777'  # Open permissions so we can copy files easily
         owner: ubuntu
         group: ubuntu
 
-    # --- 3. Secrets ---
-    # NOTE: This will fail if your server has no IAM Role. 
-    # For now, we will ignore errors so the deployment finishes.
-    - name: Fetch .env from AWS Parameter Store
-      shell: |
-        aws ssm get-parameter --name "/schedemy/prod/env" --with-decryption --query "Parameter.Value" --output text > /opt/schedemy/.env
-      ignore_errors: yes  # <--- Added this to prevent crashing if IAM is missing
+    # --- 3. Copy Your Code to the Server ---
+    # Ansible will copy the code from GitHub Action runner -> EC2
+    - name: Copy Project Files
+      synchronize:
+        src: ../
+        dest: /opt/schedemy/
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=target"
+          - "--exclude=terraform"
 
-    # --- 4. Deploy ---
-    - name: Create Docker Compose File
-      copy:
-        dest: /opt/schedemy/docker-compose.yml
-        content: |
-          version: '3'
-          services:
-            app:
-              image: nginx:latest
-              ports:
-                - "80:80"
-              restart: always
-              # env_file: .env  <--- Commented out until Secrets are working
-
-    - name: Start Containers
-      # CHANGED: 'docker-compose' -> 'docker compose' (The modern command)
-      command: docker compose up -d --force-recreate
+    # --- 4. Build the JAR File ---
+    - name: Build Application with Maven
+      command: mvn clean package -DskipTests
       args:
         chdir: /opt/schedemy
+      register: maven_build
+
+    # --- 5. Run as a System Service (So it stays alive) ---
+    - name: Create Systemd Service for Schedemy
+      copy:
+        dest: /etc/systemd/system/schedemy.service
+        content: |
+          [Unit]
+          Description=Schedemy Backend API
+          After=network.target
+
+          [Service]
+          User=root
+          WorkingDirectory=/opt/schedemy
+          # Finds the jar file automatically
+          ExecStart=/usr/bin/java -jar /opt/schedemy/target/HTU-Schedemy-Website-Backend-0.0.1-SNAPSHOT.jar
+          SuccessExitStatus=143
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload Systemd and Start App
+      systemd:
+        name: schedemy
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
