@@ -45,7 +45,10 @@ resource "aws_launch_template" "schedemy_lt" {
 
 key_name = "serfuh"
   # Networking
-  vpc_security_group_ids = [aws_security_group.app_sg.id]
+network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.app_sg.id] 
+  }
 
   # IAM Profile (Allows server to talk to SSM/ECR)
   # We will add the actual role in the next step, for now leaving blank is okay or we add a placeholder.
@@ -81,7 +84,7 @@ resource "aws_autoscaling_group" "schedemy_asg" {
   desired_capacity    = 2
   max_size            = 4
   min_size            = 2
-  vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id] # Launches in PRIVATE subnets
+vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id] # Where the servers will live
 
   target_group_arns = [aws_lb_target_group.schedemy_tg.arn] # Connects ASG to ALB
 
