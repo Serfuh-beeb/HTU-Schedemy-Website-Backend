@@ -32,16 +32,14 @@
         owner: ubuntu
         group: ubuntu
 
-    # --- 3. Copy Your Code to the Server ---
-    # Ansible will copy the code from GitHub Action runner -> EC2
-    - name: Copy Project Files
-      synchronize:
-        src: ../
-        dest: /opt/schedemy/
-        rsync_opts:
-          - "--exclude=.git"
-          - "--exclude=target"
-          - "--exclude=terraform"
+    # --- 3. Clone Code from GitHub ---
+    - name: Clone or update project from GitHub
+      git:
+        repo: https://github.com/Serfuh-beeb/HTU-Schedemy-Website-Backend.git
+        dest: /opt/schedemy
+        version: main
+        force: yes
+      become_user: ubuntu
 
     # --- 4. Stop placeholder Nginx container (if running) ---
     - name: Stop placeholder Nginx container
