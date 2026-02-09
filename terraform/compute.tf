@@ -30,7 +30,7 @@ resource "aws_lb_target_group" "schedemy_tg" {
   vpc_id   = aws_vpc.main_vpc.id
 
   health_check {
-    path                = "/courses" # Checks if the homepage is loading
+    path                = "/instructor" # Checks if the homepage is loading
     healthy_threshold   = 2
     unhealthy_threshold = 10
   }
