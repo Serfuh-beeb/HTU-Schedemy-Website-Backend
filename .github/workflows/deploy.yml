@@ -18,7 +18,9 @@ jobs:
           python-version: '3.x'
 
       - name: Install Ansible & AWS Tools
-        run: pip install ansible boto3 botocore
+        run: |
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -34,6 +36,13 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
 
+      - name: Verify Ansible can discover hosts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          cd ansible
+          ansible-inventory -i inventory.aws_ec2.yml --list
+
       - name: Run Ansible Playbook
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -43,4 +52,4 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           cd ansible
-          ansible-playbook -i inventory.aws_ec2.yml deploy.yml
+          ansible-playbook -i inventory.aws_ec2.yml deploy.yml -vvv
