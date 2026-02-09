@@ -1,0 +1,61 @@
+---
+- name: Configure and Deploy Schedemy
+  hosts: role_SchedemyWebServer
+  become: yes
+  vars:
+    # This prevents git errors if the directory ownership is wrong
+    git_safe_directory: /opt/schedemy
+
+  tasks:
+    # --- 1. System Setup ---
+    - name: Install Docker and Git
+      apt:
+        name: ['docker.io', 'git', 'curl']
+        state: present
+        update_cache: yes
+
+    - name: Start and Enable Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add Ubuntu user to Docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    # --- 2. Application Setup ---
+    - name: Create App Directory
+      file:
+        path: /opt/schedemy
+        state: directory
+        mode: '0755'
+        owner: ubuntu
+        group: ubuntu
+
+    # --- 3. Secrets (Distinction Requirement) ---
+    - name: Fetch .env from AWS Parameter Store
+      shell: |
+        aws ssm get-parameter --name "/schedemy/prod/env" --with-decryption --query "Parameter.Value" --output text > /opt/schedemy/.env
+      changed_when: false # Keeps the output clean
+
+    # --- 4. Deploy ---
+    - name: Create Docker Compose File
+      copy:
+        dest: /opt/schedemy/docker-compose.yml
+        content: |
+          version: '3'
+          services:
+            app:
+              image: nginx:latest  # Replace with your actual image later
+              ports:
+                - "80:80"
+              restart: always
+              env_file: .env
+
+    - name: Start Containers
+      command: docker-compose up -d --force-recreate
+      args:
+        chdir: /opt/schedemy
