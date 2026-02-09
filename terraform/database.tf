@@ -44,9 +44,9 @@ resource "aws_db_instance" "schedemy_db" {
   engine_version       = "8.0" # Standard MySQL version
   instance_class       = "db.t3.micro" # Free Tier eligible instance
   db_name              = "schedemy"
-  username             = "admin"
-  password             = "SuperSecretPass123!" # We will secure this later
-  parameter_group_name = "default.mysql8.0"
+  username             = var.db_username
+  password             = var.db_password
+  parameter_group_name = null # Use AWS default for the engine version
   skip_final_snapshot  = true # Skip backup when deleting (for labs only)
   
   # Networking

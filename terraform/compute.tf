@@ -1,5 +1,4 @@
-# --- 1. The Application Load Balancer (ALB) ---
-# This is the "Front Door" of your application.
+# --- 1. Load Balancer ---
 resource "aws_lb" "schedemy_alb" {
   name               = "schedemy-alb"
   internal           = false
@@ -10,7 +9,6 @@ resource "aws_lb" "schedemy_alb" {
   tags = { Name = "schedemy-alb" }
 }
 
-# Listener: Listens for traffic on Port 80
 resource "aws_lb_listener" "front_end" {
   load_balancer_arn = aws_lb.schedemy_alb.arn
   port              = "80"
@@ -22,7 +20,6 @@ resource "aws_lb_listener" "front_end" {
   }
 }
 
-# Target Group: A list of servers the ALB sends traffic to
 resource "aws_lb_target_group" "schedemy_tg" {
   name     = "schedemy-tg"
   port     = 8080
@@ -30,41 +27,46 @@ resource "aws_lb_target_group" "schedemy_tg" {
   vpc_id   = aws_vpc.main_vpc.id
 
   health_check {
-    path                = "/instructor" # Checks if the homepage is loading
+    path                = "/" # Checks if app is responding
     healthy_threshold   = 2
-    unhealthy_threshold = 10
+    unhealthy_threshold = 5
+    timeout             = 5
+    interval            = 30
+    matcher             = "200-399"
+    port                = 8080
+  }
+
+  # Prevents "ResourceInUse" errors when changing ports
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
-# --- 2. The Launch Template ---
-# This defines the "Blueprint" for every server.
+# --- 2. Launch Template ---
 resource "aws_launch_template" "schedemy_lt" {
   name_prefix   = "schedemy-lt-"
-  image_id      = "ami-04b70fa74e45c3917" # Ubuntu 24.04 LTS (us-east-1)
-  instance_type = "t3.micro"
+  image_id      = data.aws_ami.ubuntu.id
+  instance_type = var.instance_type
+  key_name      = var.key_name
 
-key_name = "serfuh"
-  # Networking
-network_interfaces {
+  network_interfaces {
     associate_public_ip_address = true
-    security_groups             = [aws_security_group.app_sg.id] 
+    security_groups             = [aws_security_group.app_sg.id]
   }
 
-  # IAM Profile (Allows server to talk to SSM/ECR)
-  # We will add the actual role in the next step, for now leaving blank is okay or we add a placeholder.
-  # For this specific run, we'll omit the profile line to keep it simple, 
-  # but in a real distinction setup, you'd attach the role here.
-
-  # User Data: The Script that runs on boot
+  # Install Java 17, Maven, and run a placeholder health-check responder
+  # until Ansible deploys the real Spring Boot app
   user_data = base64encode(<<-EOF
               #!/bin/bash
+              set -e
               apt-get update -y
-              apt-get install -y docker.io awscli
+              apt-get install -y openjdk-17-jdk maven docker.io git acl
               systemctl start docker
               systemctl enable docker
               usermod -aG docker ubuntu
-              # Pull and run a sample container to prove it works
-              docker run -d -p 80:80 nginx
+
+              # Placeholder: keep ALB health checks happy until Ansible deploys
+              docker run -d -p 8080:80 nginx
               EOF
   )
 
@@ -72,21 +74,20 @@ network_interfaces {
     resource_type = "instance"
     tags = {
       Name = "Schedemy-App-Server"
-      Role = "SchedemyWebServer" # Crucial for Ansible/Deployment
+      Role = "SchedemyWebServer"
     }
   }
 }
 
-# --- 3. The Auto Scaling Group (ASG) ---
-# This manages the fleet of servers.
+# --- 3. Auto Scaling Group ---
 resource "aws_autoscaling_group" "schedemy_asg" {
   name                = "schedemy-asg"
   desired_capacity    = 2
   max_size            = 4
   min_size            = 2
-vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id] # Where the servers will live
+  vpc_zone_identifier = [aws_subnet.public_1.id, aws_subnet.public_2.id]
 
-  target_group_arns = [aws_lb_target_group.schedemy_tg.arn] # Connects ASG to ALB
+  target_group_arns = [aws_lb_target_group.schedemy_tg.arn]
 
   launch_template {
     id      = aws_launch_template.schedemy_lt.id

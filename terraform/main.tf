@@ -1,29 +1,48 @@
+terraform {
+  required_version = ">= 1.3.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+    }
+  }
+}
+
 provider "aws" {
   region = "us-east-1"
 }
 
-# --- 1. NETWORK FOUNDATION (The "Land") ---
+# --- 0. LATEST UBUNTU AMI ---
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
 
-# The Virtual Private Cloud (VPC)
-# This is your private slice of the AWS cloud.
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+# --- 1. NETWORK FOUNDATION ---
 resource "aws_vpc" "main_vpc" {
-  cidr_block           = "10.0.0.0/16" # Allows 65,536 IP addresses
+  cidr_block           = "10.0.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
   tags = { Name = "schedemy-vpc-high-tier" }
 }
 
-# Internet Gateway (IGW)
-# The "Front Door" that allows traffic to enter/leave the VPC.
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main_vpc.id
   tags   = { Name = "schedemy-igw" }
 }
 
-# --- 2. SUBNETS (The "Rooms") ---
+# --- 2. SUBNETS ---
 
-# Public Subnets (For Load Balancer & NAT Gateway)
-# These CAN talk to the internet directly.
+# Public Subnets (For ALB & App Servers so Ansible can reach them)
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main_vpc.id
   cidr_block              = "10.0.1.0/24"
@@ -40,8 +59,7 @@ resource "aws_subnet" "public_2" {
   tags                    = { Name = "public-subnet-2" }
 }
 
-# Private Subnets (For Application Servers)
-# These are HIDDEN. No direct internet access.
+# Private Subnets (For Database - REQUIRED by database.tf)
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main_vpc.id
   cidr_block        = "10.0.3.0/24"
@@ -56,10 +74,7 @@ resource "aws_subnet" "private_2" {
   tags              = { Name = "private-subnet-2" }
 }
 
-# --- 3. ROUTING (The "Map") ---
-
-# Public Route Table
-# Tells traffic: "If you want to go to the internet (0.0.0.0/0), use the IGW."
+# --- 3. ROUTING ---
 resource "aws_route_table" "public_rt" {
   vpc_id = aws_vpc.main_vpc.id
   route {
@@ -69,7 +84,6 @@ resource "aws_route_table" "public_rt" {
   tags = { Name = "public-route-table" }
 }
 
-# Associate Public Subnets with the Public Route Table
 resource "aws_route_table_association" "public_1_assoc" {
   subnet_id      = aws_subnet.public_1.id
   route_table_id = aws_route_table.public_rt.id
@@ -79,10 +93,9 @@ resource "aws_route_table_association" "public_2_assoc" {
   route_table_id = aws_route_table.public_rt.id
 }
 
-# --- 4. SECURITY GROUPS (The "Firewalls") ---
+# --- 4. SECURITY GROUPS ---
 
-# ALB Security Group
-# Allows the whole world to access port 80 (HTTP).
+# Front Door (ALB) - Allows HTTP 80
 resource "aws_security_group" "alb_sg" {
   name        = "schedemy-alb-sg"
   description = "Allow HTTP inbound traffic"
@@ -90,8 +103,8 @@ resource "aws_security_group" "alb_sg" {
 
   ingress {
     description = "HTTP from Internet"
-    from_port   = 8080
-    to_port     = 8080
+    from_port   = 80
+    to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -102,23 +115,30 @@ resource "aws_security_group" "alb_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = { Name = "schedemy-alb-sg" }
 }
 
-# App Security Group
-# The Distinction part: It ONLY accepts traffic from the ALB.
-# If a hacker tries to connect directly, they get blocked.
+# App Server Firewall - Allows 8080 (App) and 22 (SSH)
 resource "aws_security_group" "app_sg" {
   name        = "schedemy-app-sg"
-  description = "Allow traffic from ALB only"
+  description = "Allow traffic from ALB and SSH"
   vpc_id      = aws_vpc.main_vpc.id
 
+  # Allow Load Balancer to talk to Java App (Port 8080)
   ingress {
-    description     = "HTTP from ALB"
-    from_port       = 80
-    to_port         = 80
+    description     = "App Port from ALB"
+    from_port       = 8080
+    to_port         = 8080
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id] # Only ALB is allowed
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  # Allow Ansible to SSH in (Port 22)
+  ingress {
+    description = "SSH from World"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -127,5 +147,4 @@ resource "aws_security_group" "app_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags = { Name = "schedemy-app-sg" }
 }

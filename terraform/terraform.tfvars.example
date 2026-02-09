@@ -1,0 +1,3 @@
+# Copy this file to terraform.tfvars and fill in your values
+db_password = "YourStrongPassword123!"
+key_name    = "your-key-pair-name"

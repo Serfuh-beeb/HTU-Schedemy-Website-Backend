@@ -3,8 +3,12 @@
   hosts: role_SchedemyWebServer
   become: yes
   vars:
-    # This ensures we can build even if permissions are tricky
     git_safe_directory: /opt/schedemy
+    # DB connection info — pass these with --extra-vars or from Terraform outputs
+    db_host: "{{ lookup('env', 'DB_HOST') | default('localhost', true) }}"
+    db_name: "{{ lookup('env', 'DB_NAME') | default('schedemy', true) }}"
+    db_username: "{{ lookup('env', 'DB_USERNAME') | default('admin', true) }}"
+    db_password: "{{ lookup('env', 'DB_PASSWORD') | default('changeme', true) }}"
 
   tasks:
     # --- 1. Install Real Dependencies (Java & Maven) ---
@@ -39,14 +43,19 @@
           - "--exclude=target"
           - "--exclude=terraform"
 
-    # --- 4. Build the JAR File ---
+    # --- 4. Stop placeholder Nginx container (if running) ---
+    - name: Stop placeholder Nginx container
+      shell: docker stop $(docker ps -q) || true
+      ignore_errors: yes
+
+    # --- 5. Build the JAR File ---
     - name: Build Application with Maven
       command: mvn clean package -DskipTests
       args:
         chdir: /opt/schedemy
       register: maven_build
 
-    # --- 5. Run as a System Service (So it stays alive) ---
+    # --- 6. Run as a System Service (So it stays alive) ---
     - name: Create Systemd Service for Schedemy
       copy:
         dest: /etc/systemd/system/schedemy.service
@@ -58,8 +67,12 @@
           [Service]
           User=root
           WorkingDirectory=/opt/schedemy
-          # Finds the jar file automatically
-          ExecStart=/usr/bin/java -jar /opt/schedemy/target/HTU-Schedemy-Website-Backend-0.0.1-SNAPSHOT.jar
+          Environment="SPRING_PROFILES_ACTIVE=prod"
+          Environment="DB_HOST={{ db_host }}"
+          Environment="DB_NAME={{ db_name }}"
+          Environment="DB_USERNAME={{ db_username }}"
+          Environment="DB_PASSWORD={{ db_password }}"
+          ExecStart=/usr/bin/java -jar /opt/schedemy/target/EduSched-0.0.1-SNAPSHOT.jar
           SuccessExitStatus=143
           Restart=always
           RestartSec=10
