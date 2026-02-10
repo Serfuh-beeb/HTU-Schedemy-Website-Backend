@@ -51,7 +51,7 @@ resource "aws_lb_target_group" "schedemy_tg" {
   vpc_id   = aws_vpc.main_vpc.id
 
   health_check {
-    path                = "/" # Checks if app is responding
+    path                = "/instructor"
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 5
