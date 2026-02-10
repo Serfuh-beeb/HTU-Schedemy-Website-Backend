@@ -95,7 +95,7 @@ resource "aws_route_table_association" "public_2_assoc" {
 
 # --- 4. SECURITY GROUPS ---
 
-# Front Door (ALB) - Allows HTTP 80
+# Front Door (ALB) - Allows HTTP 80 and HTTPS 443
 resource "aws_security_group" "alb_sg" {
   name        = "schedemy-alb-sg"
   description = "Allow HTTP inbound traffic"
@@ -105,6 +105,14 @@ resource "aws_security_group" "alb_sg" {
     description = "HTTP from Internet"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from Internet"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
