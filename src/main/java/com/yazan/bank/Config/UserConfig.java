@@ -18,6 +18,12 @@ public class UserConfig {
     @Bean
     CommandLineRunner commandLineRunner2(SchedulesRepository schedulesRepository,RoomRepository roomRepository, InstructorsRepository instructorsRepository, CoursesRepository coursesRepository, TimeSlotRepository timeSlotRepository) {
         return args -> {
+            // Only seed data if the database is empty (prevents duplicate key errors on restart)
+            if (instructorsRepository.count() > 0) {
+                System.out.println("Database already seeded, skipping initialization.");
+                return;
+            }
+
             List<String> instructorNames = List.of(
                     "Dr. Adam Khalil",
                     "Dr. Lina Haddad",
